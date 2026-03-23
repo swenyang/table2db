@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "table2db"
+version = "0.1.0"
+description = "Convert tabular files (Excel, CSV, TSV) into clean, queryable SQLite databases"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "swenyang"},
+]
+keywords = ["excel", "sqlite", "csv", "table", "database", "etl", "data-cleaning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+]
+dependencies = [
+    "openpyxl>=3.1.0",
+    "xlrd>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/swenyang/table2db"
+Repository = "https://github.com/swenyang/table2db"
+Issues = "https://github.com/swenyang/table2db/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+table2db = "table2db.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["table2db*"]
