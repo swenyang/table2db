@@ -89,6 +89,17 @@ def _process_sheet(
 
     sheet.header_row_start = header_start
 
+    # Compute header confidence
+    header_row = rows[header_start]
+    non_none = [v for v in header_row if v is not None]
+    non_none_count = len(non_none)
+    string_count = sum(1 for v in non_none if isinstance(v, str))
+    if non_none_count > 0 and max_cols > 0:
+        header_confidence = (non_none_count / max_cols) * (string_count / non_none_count)
+    else:
+        header_confidence = 0.0
+    sheet.metadata["header_confidence"] = round(header_confidence, 2)
+
     # Multi-level header detection
     header_end = header_start
     next_row = header_start + 1

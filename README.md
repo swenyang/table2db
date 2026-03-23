@@ -108,6 +108,7 @@ table2db describe report.db -o report_summary.md
 | **Lifecycle Management** | Temp SQLite file + context manager for auto-cleanup |
 | **Error Handling** | Full exception hierarchy: `FileReadError`, `NoDataError`, `UnsupportedFormatError`, `SchemaError` |
 | **Observability** | Per-stage logging via Python `logging`; warnings collection during processing |
+| **Quality Metrics** | Per-table and overall quality scores (0-1): detection confidence, header confidence, type reliability, null rates, cleaning stats |
 
 ### Explicitly Not Supported
 
@@ -265,7 +266,7 @@ Data validation (dropdowns) · conditional formatting · named ranges · comment
 
 ### `TableConverter`
 
-The main entry point for converting Excel files.
+The main entry point for converting tabular files.
 
 ```python
 class TableConverter:
@@ -279,54 +280,149 @@ class TableConverter:
         header_min_string_ratio: float = 0.7,
     ): ...
 
-    def process(
-        self, file_path: str | BinaryIO, *, file_name: str | None = None
-    ) -> tuple[WorkbookData, list[str]]:
-        """Run stages 1-5. Returns (WorkbookData, warnings).
-        Accepts a file path or file-like object (BytesIO).
-        file_name is required for streams to detect format."""
-
-    def convert(
-        self, file_path: str | BinaryIO, *, file_name: str | None = None,
-        loader: BaseLoader | None = None,
-    ) -> ConversionResult:
-        """Run the full 6-stage pipeline. Uses SqliteLoader by default."""
-
-    async def convert_async(
-        self, file_path: str | BinaryIO, *, file_name: str | None = None,
-        loader: BaseLoader | None = None,
-    ) -> ConversionResult:
-        """Async version of convert(). Uses asyncio.to_thread()."""
-
-    async def process_async(
-        self, file_path: str | BinaryIO, *, file_name: str | None = None
-    ) -> tuple[WorkbookData, list[str]]:
-        """Async version of process(). Uses asyncio.to_thread()."""
+    def process(source, *, file_name=None) -> tuple[WorkbookData, list[str]]
+    def convert(source, *, file_name=None, loader=None) -> ConversionResult
+    async def convert_async(source, *, file_name=None, loader=None) -> ConversionResult
+    async def process_async(source, *, file_name=None) -> tuple[WorkbookData, list[str]]
 ```
+
+`source` accepts a file path (`str`) or file-like object (`BytesIO`). `file_name` is required for streams.
 
 ### `ConversionResult`
 
-Returned by `convert()` and loader `load()` methods. Supports context manager protocol for automatic cleanup.
+Returned by `convert()`. Supports context manager for automatic cleanup.
 
 ```python
-@dataclass
-class ConversionResult:
-    db_path: str                    # Path to the SQLite database
-    tables: list[TableInfo]         # Table metadata
-    relationships: list[ForeignKey] # Detected foreign keys
-    warnings: list[str]             # Processing warnings
-    metadata: dict                  # Additional metadata
+result = converter.convert("sales_report.xlsx")
+```
 
-    def cleanup(self) -> None:
-        """Delete the database file (for temp DBs)."""
+**Sample payload:**
 
-    def __enter__(self) -> ConversionResult: ...
-    def __exit__(self, *args) -> None: ...
+```python
+result.tables = [
+    TableInfo(
+        name="customers",
+        columns=[
+            {"name": "customer_id", "type": "INTEGER"},
+            {"name": "name", "type": "TEXT"},
+            {"name": "email", "type": "TEXT"},
+        ],
+        row_count=30,
+        source_sheet="Customers",
+        primary_key="customer_id",
+        confidence=1.0,
+    ),
+    TableInfo(
+        name="orders",
+        columns=[
+            {"name": "order_id", "type": "INTEGER"},
+            {"name": "customer_id", "type": "INTEGER"},
+            {"name": "product_id", "type": "INTEGER"},
+            {"name": "quantity", "type": "INTEGER"},
+        ],
+        row_count=50,
+        source_sheet="Orders",
+        primary_key="order_id",
+        confidence=1.0,
+    ),
+]
+
+result.relationships = [
+    ForeignKey(
+        from_table="orders", from_column="customer_id",
+        to_table="customers", to_column="customer_id",
+        confidence=0.9,
+    ),
+    ForeignKey(
+        from_table="orders", from_column="product_id",
+        to_table="products", to_column="product_id",
+        confidence=0.9,
+    ),
+]
+
+result.warnings = []
+
+result.metadata = {
+    "source_file": "sales_report.xlsx",
+    "table_count": 3,
+}
+
+result.db_path   # "/tmp/table2db_xxxx/data.db"
+result.cleanup() # or use `with converter.convert(...) as result:`
+```
+
+### Quality Metrics
+
+Every `ConversionResult` includes a `quality` dict with per-table and overall scores.
+
+```python
+result.quality = {
+    "overall_score": 0.96,              # 0-1, row-weighted average of table scores
+    "sheets_found": 3,                  # original sheet count
+    "sheets_converted": 3,             # successfully converted
+    "sheets_skipped": [],              # names of skipped sheets
+
+    "tables": {
+        "orders": {
+            "table_score": 0.96,        # composite score for this table
+            "detection_confidence": 1.0, # island detection confidence
+            "header_confidence": 0.85,   # header row detection score
+            "type_reliability": {        # per-column type inference reliability
+                "order_id": 1.0,         # 100% of values matched INTEGER
+                "quantity": 0.95,        # 95% matched, 5% converted to NULL
+            },
+            "avg_type_reliability": 0.98,
+            "null_rates": {              # per-column NULL ratio after conversion
+                "order_id": 0.0,
+                "quantity": 0.05,
+            },
+            "avg_null_rate": 0.02,
+            "rows_before_cleaning": 55,  # before subtotal/empty removal
+            "rows_after_cleaning": 50,
+            "rows_filtered": 5,          # subtotal rows removed
+            "duplicate_rows_removed": 0,
+        },
+    },
+
+    "relationships": [
+        {
+            "from": "orders.customer_id",
+            "to": "customers.customer_id",
+            "confidence": 0.9,
+        },
+    ],
+}
+```
+
+**Score interpretation:** `> 0.8` = reliable, `0.6-0.8` = check warnings, `< 0.6` = manual review recommended.
+
+### `process()` — Stages 1-5 Only
+
+Returns `WorkbookData` for use with custom loaders.
+
+```python
+wb, warnings = converter.process("sales_report.xlsx")
+```
+
+**Sample payload (one sheet):**
+
+```python
+wb.sheets[0] = SheetData(
+    name="Customers",
+    headers=["customer_id", "name", "email"],
+    column_types={"customer_id": "INTEGER", "name": "TEXT", "email": "TEXT"},
+    primary_key="customer_id",
+    rows=[
+        [1, "Customer 1", "customer1@example.com"],
+        [2, "Customer 2", "customer2@example.com"],
+        [3, "Customer 3", "customer3@example.com"],
+        # ... 30 rows total
+    ],
+    metadata={"island_confidence": 1.0},
+)
 ```
 
 ### `SqliteLoader`
-
-The built-in loader that writes to a SQLite database.
 
 ```python
 class SqliteLoader(BaseLoader):
@@ -345,12 +441,6 @@ class BaseLoader(ABC):
     @abstractmethod
     def load(self, wb: WorkbookData) -> ConversionResult: ...
 ```
-
-### Key Data Classes
-
-- **`WorkbookData`** — Intermediate representation of the parsed workbook (stages 1–5 output).
-- **`TableInfo`** — Metadata for a single converted table (name, columns, row count, `confidence` float from island detection — 1.0 for single-table sheets).
-- **`ForeignKey`** — A detected cross-sheet foreign key relationship.
 
 ### Exceptions
 

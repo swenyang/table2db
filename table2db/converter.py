@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import BinaryIO, Union
-from .models import WorkbookData, ConversionResult
+from .models import WorkbookData, ConversionResult, ForeignKey
 from .pipeline.reader import read_workbook
 from .pipeline.structure import detect_structure
 from .pipeline.cleaner import clean_data
@@ -15,6 +15,79 @@ from .loaders.base import BaseLoader
 from .errors import NoDataError
 
 logger = logging.getLogger(__name__)
+
+
+def _build_quality(
+    wb: WorkbookData,
+    result: ConversionResult,
+    original_sheet_count: int,
+    original_sheet_names: list[str],
+    skipped_sheets: list[str],
+) -> dict:
+    """Build quality metrics dict from pipeline metadata."""
+    table_qualities: dict[str, dict] = {}
+
+    for sheet, table_info in zip(wb.sheets, result.tables):
+        detection_confidence = sheet.metadata.get("island_confidence", 1.0)
+        header_confidence = sheet.metadata.get("header_confidence", 1.0)
+        type_reliability = sheet.metadata.get("type_reliability", {})
+        null_rates = sheet.metadata.get("null_rates", {})
+
+        avg_type_reliability = (
+            sum(type_reliability.values()) / len(type_reliability)
+            if type_reliability else 1.0
+        )
+        avg_null_rate = (
+            sum(null_rates.values()) / len(null_rates)
+            if null_rates else 0.0
+        )
+
+        table_score = (
+            detection_confidence * 0.2
+            + header_confidence * 0.2
+            + avg_type_reliability * 0.3
+            + (1 - avg_null_rate) * 0.3
+        )
+
+        table_qualities[table_info.name] = {
+            "table_score": round(table_score, 2),
+            "detection_confidence": round(detection_confidence, 2),
+            "header_confidence": round(header_confidence, 2),
+            "type_reliability": type_reliability,
+            "avg_type_reliability": round(avg_type_reliability, 2),
+            "null_rates": null_rates,
+            "avg_null_rate": round(avg_null_rate, 2),
+            "rows_before_cleaning": sheet.metadata.get("rows_before_cleaning", len(sheet.rows)),
+            "rows_after_cleaning": sheet.metadata.get("rows_after_cleaning", len(sheet.rows)),
+            "rows_filtered": sheet.metadata.get("rows_filtered", 0),
+            "duplicate_rows_removed": sheet.metadata.get("duplicate_rows_removed", 0),
+        }
+
+    # Overall score: weighted average by row count
+    total_rows = sum(t.row_count for t in result.tables) or 1
+    overall_score = sum(
+        table_qualities[t.name]["table_score"] * t.row_count / total_rows
+        for t in result.tables
+    )
+
+    # Relationship quality
+    rel_quality = [
+        {
+            "from": f"{fk.from_table}.{fk.from_column}",
+            "to": f"{fk.to_table}.{fk.to_column}",
+            "confidence": fk.confidence,
+        }
+        for fk in result.relationships
+    ]
+
+    return {
+        "overall_score": round(overall_score, 2),
+        "sheets_found": original_sheet_count,
+        "sheets_converted": len(result.tables),
+        "sheets_skipped": skipped_sheets,
+        "tables": table_qualities,
+        "relationships": rel_quality,
+    }
 
 
 class TableConverter:
@@ -54,6 +127,10 @@ class TableConverter:
         for sheet in wb.sheets:
             all_warnings.extend(sheet.metadata.get("warnings", []))
 
+        # Track original sheet info for quality metrics
+        original_sheet_count = len(wb.sheets)
+        original_sheet_names = [s.name for s in wb.sheets]
+
         logger.info("Stage 2: Detecting structure (%d sheets)", len(wb.sheets))
         wb, warnings = detect_structure(
             wb,
@@ -78,6 +155,16 @@ class TableConverter:
         logger.info("Stage 5: Inferring relationships")
         wb = infer_relationships(wb, fk_confidence_threshold=self.fk_confidence_threshold)
 
+        # Compute skipped sheets
+        remaining_names = {s.name for s in wb.sheets}
+        skipped_sheets = [n for n in original_sheet_names if n not in remaining_names]
+        # Store quality-related metadata on the workbook for convert() to use
+        wb.metadata = {
+            "original_sheet_count": original_sheet_count,
+            "original_sheet_names": original_sheet_names,
+            "skipped_sheets": skipped_sheets,
+        }
+
         return wb, all_warnings
 
     def convert(
@@ -101,6 +188,15 @@ class TableConverter:
         logger.info("Stage 6: Loading with %s", type(loader).__name__)
         result = loader.load(wb)
         result.warnings = all_warnings
+
+        # Build quality metrics
+        result.quality = _build_quality(
+            wb,
+            result,
+            wb.metadata.get("original_sheet_count", len(wb.sheets)),
+            wb.metadata.get("original_sheet_names", [s.name for s in wb.sheets]),
+            wb.metadata.get("skipped_sheets", []),
+        )
 
         logger.info("Conversion complete: %d tables, %d warnings",
                      len(result.tables), len(result.warnings))

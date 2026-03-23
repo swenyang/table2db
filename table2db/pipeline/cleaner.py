@@ -143,6 +143,13 @@ def clean_data(
 
         rows = [r for _, r in rows_with_orig]
         orig_indices = [i for i, _ in rows_with_orig]
+
+        # Track rows before cleaning and duplicates removed
+        empty_removed = sum(1 for r in sheet.rows if all(v is None for v in r))
+        duplicate_rows_removed = len(sheet.rows) - empty_removed - len(rows)
+        sheet.metadata["rows_before_cleaning"] = len(rows)
+        sheet.metadata["duplicate_rows_removed"] = max(duplicate_rows_removed, 0)
+
         numeric_cols = _find_numeric_columns(rows, ncols)
         subtotal_flags = [False] * len(rows)
 
@@ -173,6 +180,8 @@ def clean_data(
 
         sheet.rows = clean_rows
         sheet.excluded_rows = excluded
+        sheet.metadata["rows_after_cleaning"] = len(sheet.rows)
+        sheet.metadata["rows_filtered"] = len(excluded)
 
         if len(sheet.rows) == 0:
             warnings.append(f"Sheet '{sheet.name}' has no data rows after cleaning, skipped")

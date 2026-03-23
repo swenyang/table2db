@@ -180,9 +180,28 @@ def infer_types(wb: WorkbookData, type_threshold: float = 0.8) -> WorkbookData:
 
             sheet.column_types[sheet.headers[col_idx]] = col_type
 
+            # Store type reliability for this column
+            header_name = sheet.headers[col_idx]
+            if total_non_none == 0:
+                type_reliability = 1.0
+            else:
+                numeric_count = type_counts.get("INTEGER", 0) + type_counts.get("REAL", 0)
+                if numeric_count / total_non_none >= type_threshold:
+                    type_reliability = numeric_count / total_non_none
+                else:
+                    top_type, top_count = type_counts.most_common(1)[0]
+                    type_reliability = top_count / total_non_none
+            sheet.metadata.setdefault("type_reliability", {})[header_name] = round(type_reliability, 2)
+
             # Convert values in place
             for row in sheet.rows:
                 if col_idx < len(row):
                     row[col_idx] = _convert_value(row[col_idx], col_type)
+
+        # Compute null rates per column after type conversion
+        sheet.metadata["null_rates"] = {}
+        for col_idx, header in enumerate(sheet.headers):
+            null_count = sum(1 for row in sheet.rows if col_idx < len(row) and row[col_idx] is None)
+            sheet.metadata["null_rates"][header] = round(null_count / len(sheet.rows), 2) if sheet.rows else 0.0
 
     return wb

@@ -33,6 +33,7 @@ class WorkbookData:
     source_file: str
     sheets: list[SheetData] = field(default_factory=list)
     relationships: list[ForeignKey] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ConversionResult:
     relationships: list[ForeignKey] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    quality: dict = field(default_factory=dict)
 
     def cleanup(self):
         if os.path.exists(self.db_path):

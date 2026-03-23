@@ -43,6 +43,14 @@ A Python library that automatically parses arbitrary Excel files (`.xlsx` / `.xl
 | `.xlsb` format | Binary Excel, requires additional dependencies |
 | Password-protected files | Raises `FileReadError`, cannot decrypt and read |
 
+### ⚠️ Known Limitations
+
+| Limitation | Description | Workaround |
+|-----------|-------------|------------|
+| Numeric column headers | Sheets where headers are numbers (e.g., `Week 1, 2, 3...52`) fail string-ratio check (≥70%). The header row is not detected. | Lower `header_min_string_ratio` or restructure the Excel file |
+| Sparse header rows | Headers with ≤50% fill rate (e.g., 2 columns in a 4-column sheet) are rejected by fill-ratio check. The boundary is strict `>`, not `>=`. | Lower `header_min_fill_ratio` |
+| Empty separator columns | Excel sheets with blank columns between data columns inflate the grid size and lower island detection confidence. These columns are carried into the DB as all-NULL columns. | Manual post-processing to drop NULL columns |
+
 ---
 
 ## Architecture: Pipeline
