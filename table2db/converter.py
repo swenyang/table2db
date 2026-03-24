@@ -63,12 +63,16 @@ def _build_quality(
             "duplicate_rows_removed": sheet.metadata.get("duplicate_rows_removed", 0),
         }
 
-    # Overall score: weighted average by row count
+    # Overall score: weighted average by row count, with skip penalty
     total_rows = sum(t.row_count for t in result.tables) or 1
-    overall_score = sum(
+    raw_score = sum(
         table_qualities[t.name]["table_score"] * t.row_count / total_rows
         for t in result.tables
     )
+    # Penalty: each skipped sheet reduces score proportionally
+    total_entities = len(result.tables) + len(skipped_sheets)
+    skip_penalty = len(skipped_sheets) / total_entities if total_entities > 0 else 0
+    overall_score = raw_score * (1 - skip_penalty * 0.5)
 
     # Relationship quality
     rel_quality = [
@@ -99,6 +103,7 @@ class TableConverter:
         fk_confidence_threshold: float = 0.8,
         header_min_fill_ratio: float = 0.5,
         header_min_string_ratio: float = 0.7,
+        color_mode: str = "ignore",
     ):
         self.subtotal_keywords = subtotal_keywords
         self.type_threshold = type_threshold
@@ -106,6 +111,7 @@ class TableConverter:
         self.fk_confidence_threshold = fk_confidence_threshold
         self.header_min_fill_ratio = header_min_fill_ratio
         self.header_min_string_ratio = header_min_string_ratio
+        self.color_mode = color_mode
 
     def process(
         self, source: Union[str, BinaryIO], file_name: str | None = None
@@ -123,7 +129,7 @@ class TableConverter:
 
         logger.info("Stage 1: Reading workbook from %s", source_label)
         wb = read_workbook(source, skip_hidden_sheets=self.skip_hidden_sheets,
-                           file_name=file_name)
+                           file_name=file_name, color_mode=self.color_mode)
         for sheet in wb.sheets:
             all_warnings.extend(sheet.metadata.get("warnings", []))
 

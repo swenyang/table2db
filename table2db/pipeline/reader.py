@@ -19,6 +19,7 @@ def read_workbook(
     source: Union[str, BinaryIO],
     skip_hidden_sheets: bool = True,
     file_name: str | None = None,
+    color_mode: str = "ignore",
 ) -> WorkbookData:
     """Read an Excel/CSV/TSV file and return raw WorkbookData.
 
@@ -26,6 +27,7 @@ def read_workbook(
         source: File path (str) or file-like object (BytesIO, UploadFile.file, etc.)
         skip_hidden_sheets: Whether to skip hidden Excel sheets.
         file_name: Original file name (required when source is a stream, to detect format).
+        color_mode: "ignore" (default) or "value" to fill empty colored cells with hex strings.
 
     Handles merged cells, error values, hidden rows/cols, and row styles.
     """
@@ -41,7 +43,7 @@ def read_workbook(
         source_label = file_name
 
     if ext in (".xlsx", ".xlsm"):
-        return _read_xlsx(source, skip_hidden_sheets, source_label)
+        return _read_xlsx(source, skip_hidden_sheets, source_label, color_mode)
     elif ext == ".xls":
         return _read_xls(source, skip_hidden_sheets, source_label)
     elif ext in (".csv", ".tsv"):
@@ -50,7 +52,7 @@ def read_workbook(
         raise UnsupportedFormatError(f"Unsupported format: {ext}")
 
 
-def _read_xlsx(source, skip_hidden_sheets: bool, source_label: str) -> WorkbookData:
+def _read_xlsx(source, skip_hidden_sheets: bool, source_label: str, color_mode: str = "ignore") -> WorkbookData:
     try:
         wb = openpyxl.load_workbook(source, data_only=True)
     except Exception as e:
@@ -87,13 +89,23 @@ def _read_xlsx(source, skip_hidden_sheets: bool, source_label: str) -> WorkbookD
         for row_idx in range(1, max_row + 1):
             row_data: list[Any] = []
             for col_idx in range(1, max_col + 1):
-                val = ws.cell(row_idx, col_idx).value
+                cell = ws.cell(row_idx, col_idx)
+                val = cell.value
                 # Fill merged cell values
                 if val is None and (row_idx - 1, col_idx - 1) in merge_map:
                     val = merge_map[(row_idx - 1, col_idx - 1)]
                 # Convert error values to None
                 if isinstance(val, str) and val in _ERROR_VALUES:
                     val = None
+                # Color-as-data: fill empty cells with hex color if colored
+                if val is None and color_mode == "value":
+                    rgb = None
+                    if cell.fill and cell.fill.start_color and cell.fill.start_color.rgb:
+                        r = cell.fill.start_color.rgb
+                        if isinstance(r, str) and r != "00000000":
+                            rgb = r
+                    if rgb:
+                        val = f"#{rgb[-6:]}"
                 row_data.append(val)
             rows.append(row_data)
 

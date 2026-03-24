@@ -1,8 +1,9 @@
-"""Generate output .db and _summary.md files from all test fixtures.
+"""Generate output .db, _summary.md, and _quality.json files from all test fixtures.
 
 Usage:
     python tests/generate_outputs.py
 """
+import json
 import os
 import shutil
 from table2db import TableConverter
@@ -17,7 +18,10 @@ def main():
 
     # Clear old outputs
     for f in os.listdir(OUTPUT_DIR):
-        os.unlink(os.path.join(OUTPUT_DIR, f))
+        try:
+            os.unlink(os.path.join(OUTPUT_DIR, f))
+        except PermissionError:
+            pass  # skip locked files, will be overwritten
 
     converter = TableConverter()
     count = 0
@@ -27,23 +31,29 @@ def main():
             continue
         src = os.path.join(FIXTURES_DIR, fx)
         base = os.path.splitext(fx)[0]
+        # Sanitize spaces in filename
+        safe_base = base.replace(" ", "_")
 
         try:
             result = converter.convert(src)
-            shutil.copy2(result.db_path, os.path.join(OUTPUT_DIR, f"{base}.db"))
+            shutil.copy2(result.db_path, os.path.join(OUTPUT_DIR, f"{safe_base}.db"))
 
             summary = generate_db_summary(result, sample_rows=3)
-            with open(os.path.join(OUTPUT_DIR, f"{base}_summary.md"), "w", encoding="utf-8") as f:
+            with open(os.path.join(OUTPUT_DIR, f"{safe_base}_summary.md"), "w", encoding="utf-8") as f:
                 f.write(summary)
 
+            with open(os.path.join(OUTPUT_DIR, f"{safe_base}_quality.json"), "w", encoding="utf-8") as f:
+                json.dump(result.quality, f, indent=2, ensure_ascii=False)
+
             total_rows = sum(t.row_count for t in result.tables)
-            print(f"  {fx:35s} -> {len(result.tables)} tables, {total_rows:3d} rows")
+            score = result.quality["overall_score"]
+            print(f"  {fx:50s} -> {len(result.tables):2d} tables, {total_rows:3d} rows, score={score}")
             result.cleanup()
             count += 1
         except Exception as e:
-            print(f"  {fx:35s} -> {type(e).__name__}: {e}")
+            print(f"  {fx:50s} -> {type(e).__name__}: {e}")
 
-    print(f"\nGenerated {count} output sets (.db + _summary.md) in {OUTPUT_DIR}")
+    print(f"\nGenerated {count} output sets (.db + _summary.md + _quality.json) in {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

@@ -186,6 +186,12 @@ class TestEndToEnd:
             for t in result.tables:
                 assert t.confidence > 0.0
 
+    def test_color_mode_parameter(self, converter, fixture_path):
+        """Verify color_mode parameter is accepted."""
+        c = TableConverter(color_mode="value")
+        with c.convert(fixture_path("simple.xlsx")) as result:
+            assert len(result.tables) >= 1
+
 
 class TestErrors:
     def test_file_not_found(self, converter):
