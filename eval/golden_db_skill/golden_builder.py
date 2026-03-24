@@ -10,7 +10,7 @@ import openpyxl
 from typing import Any
 
 
-EVAL_DIR = os.path.dirname(__file__)
+EVAL_DIR = os.path.dirname(os.path.dirname(__file__))  # eval/
 SOURCE_DIRS = {
     "references": os.path.join(EVAL_DIR, "source_files", "references"),
     "deliverables": os.path.join(EVAL_DIR, "source_files", "deliverables"),

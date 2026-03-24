@@ -8,7 +8,7 @@ import sys
 from difflib import SequenceMatcher
 from collections import defaultdict
 
-EVAL_DIR = os.path.dirname(__file__)
+EVAL_DIR = os.path.dirname(os.path.dirname(__file__))  # eval/
 GOLDEN_DIRS = [
     os.path.join(EVAL_DIR, "golden_dbs", "references"),
     os.path.join(EVAL_DIR, "golden_dbs", "deliverables"),
