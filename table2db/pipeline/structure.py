@@ -48,6 +48,10 @@ def detect_structure(
                     merge_map=sheet.merge_map,
                     metadata={**sheet.metadata, "island_confidence": island.confidence},
                     row_styles=sheet.row_styles,
+                    original_col_indices=(
+                        sheet.original_col_indices[island.col_start:island.col_end]
+                        if sheet.original_col_indices else []
+                    ),
                 )
                 sub_warnings = _process_sheet(sub_sheet, header_min_fill_ratio,
                                               header_min_string_ratio)
@@ -101,6 +105,9 @@ def _process_sheet(
     pruned_count = original_max_cols - len(kept_cols) if original_max_cols > 0 else 0
     if pruned_count > 0:
         sheet.metadata["columns_pruned"] = pruned_count
+        # Update original_col_indices to reflect pruning
+        if sheet.original_col_indices:
+            sheet.original_col_indices = [sheet.original_col_indices[c] for c in kept_cols]
         # Remap merge_map column indices
         old_to_new = {old: new for new, old in enumerate(kept_cols)}
         new_merge_map = {}
@@ -190,6 +197,8 @@ def _process_sheet(
                 cols_to_keep.append(col_idx)
         if len(cols_to_keep) < len(headers):
             pruned = len(headers) - len(cols_to_keep)
+            if sheet.original_col_indices:
+                sheet.original_col_indices = [sheet.original_col_indices[i] for i in cols_to_keep]
             headers = [headers[i] for i in cols_to_keep]
             data_rows = [[r[i] if i < len(r) else None for i in cols_to_keep] for r in data_rows]
             sheet.metadata["data_columns_pruned"] = pruned

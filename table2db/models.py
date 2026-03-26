@@ -26,6 +26,8 @@ class SheetData:
     merge_map: dict[tuple, Any] = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
     row_styles: dict[int, dict] = field(default_factory=dict)
+    original_col_indices: list[int] = field(default_factory=list)
+    # Maps current column position → original Excel column index (0-indexed)
 
 
 @dataclass
@@ -54,6 +56,16 @@ class ConversionResult:
     warnings: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     quality: dict = field(default_factory=dict)
+
+    def write_mapping(self, json_path: str) -> None:
+        """Write column mapping to a JSON sidecar file."""
+        import json
+        mapping = {
+            "source_file": self.metadata.get("source_file", ""),
+            "tables": self.metadata.get("column_mappings", []),
+        }
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=2, ensure_ascii=False)
 
     def cleanup(self):
         if os.path.exists(self.db_path):

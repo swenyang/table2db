@@ -110,6 +110,7 @@ def _read_xlsx(source, skip_hidden_sheets: bool, source_label: str, color_mode: 
             rows.append(row_data)
 
         sheet.rows = rows
+        sheet.original_col_indices = list(range(max_col))
 
         # Hidden rows and columns
         hidden_rows = []
@@ -219,6 +220,7 @@ def _read_xls(source, skip_hidden_sheets: bool, source_label: str) -> WorkbookDa
             row_data = [xls_sheet.cell_value(row_idx, col) for col in range(xls_sheet.ncols)]
             rows.append(row_data)
         sheet.rows = rows
+        sheet.original_col_indices = list(range(xls_sheet.ncols))
         workbook.sheets.append(sheet)
 
     return workbook
@@ -280,5 +282,8 @@ def _read_csv(source, ext: str, source_label: str) -> WorkbookData:
 
     sheet_name = os.path.splitext(os.path.basename(source_label))[0]
     sheet = SheetData(name=sheet_name, rows=rows)
+    if rows:
+        max_col = max(len(r) for r in rows)
+        sheet.original_col_indices = list(range(max_col))
 
     return WorkbookData(source_file=source_label, sheets=[sheet])

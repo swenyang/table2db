@@ -178,10 +178,30 @@ class SqliteLoader(BaseLoader):
                 confidence=fk.confidence,
             ))
 
+        # Build column mappings for sidecar JSON
+        column_mappings = []
+        for sheet, tbl_name in ordered_pairs:
+            tbl_mapping = {
+                "table_name": _sanitize(tbl_name),
+                "source_sheet": sheet.name,
+                "columns": [],
+            }
+            for i, h in enumerate(sheet.headers):
+                orig_col = sheet.original_col_indices[i] if i < len(sheet.original_col_indices) else i
+                tbl_mapping["columns"].append({
+                    "column_name": _sanitize(h),
+                    "source_col": orig_col,
+                })
+            column_mappings.append(tbl_mapping)
+
         return ConversionResult(
             db_path=db_path,
             tables=tables,
             relationships=normalized_rels,
             warnings=warnings,
-            metadata={"source_file": wb.source_file, "table_count": len(tables)},
+            metadata={
+                "source_file": wb.source_file,
+                "table_count": len(tables),
+                "column_mappings": column_mappings,
+            },
         )

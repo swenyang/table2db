@@ -192,6 +192,66 @@ class TestEndToEnd:
         with c.convert(fixture_path("simple.xlsx")) as result:
             assert len(result.tables) >= 1
 
+    def test_column_mapping_metadata(self, converter, fixture_path):
+        """ConversionResult should contain column_mappings with original Excel col indices."""
+        with converter.convert(fixture_path("simple.xlsx")) as result:
+            mappings = result.metadata.get("column_mappings", [])
+            assert len(mappings) >= 1
+            tbl = mappings[0]
+            assert "table_name" in tbl
+            assert "source_sheet" in tbl
+            assert len(tbl["columns"]) >= 3
+            for col in tbl["columns"]:
+                assert "column_name" in col
+                assert "source_col" in col
+                assert isinstance(col["source_col"], int)
+
+    def test_column_mapping_simple_identity(self, converter, fixture_path):
+        """For a simple sheet with no pruned columns, source_col should be sequential."""
+        with converter.convert(fixture_path("simple.xlsx")) as result:
+            mappings = result.metadata["column_mappings"]
+            cols = mappings[0]["columns"]
+            indices = [c["source_col"] for c in cols]
+            # Identity mapping: 0, 1, 2, ...
+            assert indices == list(range(len(indices)))
+
+    def test_write_mapping_json(self, converter, fixture_path, tmp_path):
+        """write_mapping() should produce valid JSON with correct structure."""
+        import json
+        with converter.convert(fixture_path("simple.xlsx")) as result:
+            json_path = str(tmp_path / "test.mapping.json")
+            result.write_mapping(json_path)
+            with open(json_path, encoding="utf-8") as f:
+                mapping = json.load(f)
+            assert "source_file" in mapping
+            assert "tables" in mapping
+            assert len(mapping["tables"]) >= 1
+            tbl = mapping["tables"][0]
+            assert "table_name" in tbl
+            assert "source_sheet" in tbl
+            assert len(tbl["columns"]) >= 1
+
+    def test_column_mapping_offset_table(self, converter, fixture_path):
+        """Offset table has empty columns pruned — source_col should skip pruned indices."""
+        with converter.convert(fixture_path("offset_table.xlsx")) as result:
+            mappings = result.metadata["column_mappings"]
+            assert len(mappings) >= 1
+            cols = mappings[0]["columns"]
+            # All source_col values must be non-negative integers
+            for col in cols:
+                assert isinstance(col["source_col"], int)
+                assert col["source_col"] >= 0
+
+    def test_column_mapping_multi_table_sheet(self, converter, fixture_path):
+        """Multi-table sheet (island split) should have correct source_col per island."""
+        with converter.convert(fixture_path("multi_table_sheet.xlsx")) as result:
+            mappings = result.metadata["column_mappings"]
+            assert len(mappings) >= 2
+            for tbl in mappings:
+                for col in tbl["columns"]:
+                    assert isinstance(col["source_col"], int)
+                    assert col["source_col"] >= 0
+
 
 class TestErrors:
     def test_file_not_found(self, converter):

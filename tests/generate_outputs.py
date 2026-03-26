@@ -36,7 +36,11 @@ def main():
 
         try:
             result = converter.convert(src)
-            shutil.copy2(result.db_path, os.path.join(OUTPUT_DIR, f"{safe_base}.db"))
+            db_dst = os.path.join(OUTPUT_DIR, f"{safe_base}.db")
+            shutil.copy2(result.db_path, db_dst)
+
+            mapping_dst = os.path.join(OUTPUT_DIR, f"{safe_base}.mapping.json")
+            result.write_mapping(mapping_dst)
 
             summary = generate_db_summary(result, sample_rows=3)
             with open(os.path.join(OUTPUT_DIR, f"{safe_base}_summary.md"), "w", encoding="utf-8") as f:
