@@ -1,5 +1,7 @@
 # table2db
 
+⚠️This repo is deprecated. Heuristic approach to transfor table files to DB is not practical. Use LLM instead.⚠️
+
 Convert messy Excel files into clean, queryable SQLite databases — merged cells, multi-level headers, subtotals, mixed types, and all.
 
 ## Installation
